@@ -1,0 +1,53 @@
+{
+  "name": "Roadmap Feature: undefined",
+  "nodes": [
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "feature_name"
+            },
+            {
+              "name": "phase"
+            },
+            {
+              "name": "status"
+            }
+          ]
+        }
+      },
+      "name": "Feature Data",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.zapier.com/hooks/catch/placeholder/",
+        "options": {}
+      },
+      "name": "Track Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Feature Data": {
+      "main": [
+        [
+          {
+            "node": "Track Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

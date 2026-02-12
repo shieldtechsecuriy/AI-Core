@@ -1,0 +1,86 @@
+require('dotenv').config();
+const logger = require('./utils/logger');
+const DiscordService = require('./services/discord.service');
+const DatabaseService = require('./services/database.service');
+const DailyReportService = require('./services/daily-report.service');
+const ClaudeService = require('./services/claude.service');
+const TokenTrackerService = require('./services/token-tracker.service');
+const ConversationalAssistantService = require('./services/conversational-assistant.service');
+const DiscordConversationHandler = require('./services/discord-conversation-handler');
+const AutonomousBuilderService = require('./services/autonomous-builder.service');
+const BusinessStrategistService = require('./services/business-strategist.service');
+const SecurityGuardianService = require('./services/security-guardian.service');
+const DeploymentTracker = require('./services/deployment-tracker.service');
+const CompetitorIntelligenceService = require('./services/competitor-intelligence.service');
+const SSHSecurityMonitor = require('./services/ssh-security-monitor.service');
+
+async function main() {
+  try {
+    logger.info('🚀 Starting OpenClaw...');
+    
+    const discordService = new DiscordService({
+      discordToken: process.env.DISCORD_BOT_TOKEN,
+      enabled: process.env.DISCORD_ENABLED === 'true'
+    });
+    await discordService.initialize();
+    await new Promise(r => setTimeout(r, 2000));
+    
+    const databaseService = new DatabaseService();
+    await databaseService.initialize();
+    
+    const tokenTracker = new TokenTrackerService(discordService, databaseService);
+    await tokenTracker.start();
+    
+    const dailyReport = new DailyReportService(databaseService, tokenTracker, discordService);
+    await dailyReport.start();
+    
+    const claudeService = new ClaudeService();
+    claudeService.setTokenTracker(tokenTracker);
+    
+    const assistant = new ConversationalAssistantService(claudeService, discordService);
+    await assistant.start();
+    
+    if (discordService.client) {
+      const handler = new DiscordConversationHandler(discordService.client, assistant);
+      handler.initialize();
+    }
+    
+    const builder = new AutonomousBuilderService(claudeService, discordService);
+    await builder.start();
+    
+    const strategist = new BusinessStrategistService(claudeService, discordService);
+    await strategist.start();
+    
+    const security = new SecurityGuardianService(discordService);
+    await security.start();
+    
+    const competitor = new CompetitorIntelligenceService(claudeService, discordService);
+    await competitor.start();
+    
+    const deploymentTracker = new DeploymentTracker(discordService);
+    await deploymentTracker.start();
+    
+    const sshMonitor = new SSHSecurityMonitor(discordService);
+    await sshMonitor.start();
+    
+    logger.info('✅ ALL SERVICES RUNNING!');
+    
+    if (discordService?.sendEmbed) {
+      await discordService.sendEmbed({
+        title: '🎉 OPENCLAW ACTIVE',
+        description: '**All systems operational with daily reports!**',
+        fields: [
+          { name: '🗄️', value: 'Database', inline: true },
+          { name: '📊', value: 'Daily Reports', inline: true },
+          { name: '💰', value: 'Cost Tracking', inline: true }
+        ],
+        color: 0x2ecc71
+      });
+    }
+    
+  } catch (error) {
+    logger.error('Startup failed:', error);
+  }
+}
+
+main();

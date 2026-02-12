@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clawboard</title>
+    <style>
+      :root {
+        --bg: #0b0f1a;
+        --panel: #151a28;
+        --accent: #2ecc71;
+        --warn: #f39c12;
+        --text: #f5f6fa;
+        --muted: #9aa0a6;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top left, #1b2235, var(--bg));
+        color: var(--text);
+      }
+      .container {
+        max-width: 1100px;
+        margin: 32px auto;
+        padding: 0 20px;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+      .title {
+        font-size: 28px;
+        letter-spacing: 1px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--panel);
+        padding: 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.06);
+      }
+      .label {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+      }
+      .value {
+        font-size: 22px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #0b0f1a;
+        font-weight: 600;
+      }
+      .muted {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="title">Clawboard</div>
+        <div id="timestamp" class="muted"></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="label">Autonomy</div>
+          <div class="value"><span id="autonomy" class="badge">Loading</span></div>
+        </div>
+        <div class="card">
+          <div class="label">Roadmap</div>
+          <div class="value">
+            <div>Pending: <span id="pending">-</span></div>
+            <div>In Progress: <span id="inProgress">-</span></div>
+            <div>Completed: <span id="completed">-</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="label">Daily Spend</div>
+          <div class="value">$<span id="spend">0.00</span></div>
+        </div>
+        <div class="card">
+          <div class="label">API Calls</div>
+          <div class="value"><span id="calls">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      async function refresh() {
+        try {
+          const res = await fetch('/api/status');
+          const data = await res.json();
+
+          document.getElementById('timestamp').textContent = new Date(data.timestamp).toLocaleString();
+          document.getElementById('autonomy').textContent = data.autonomyPaused ? 'Paused' : 'Active';
+          document.getElementById('autonomy').style.background = data.autonomyPaused ? '#f39c12' : '#2ecc71';
+
+          document.getElementById('pending').textContent = data.roadmap?.pending ?? '-';
+          document.getElementById('inProgress').textContent = data.roadmap?.inProgress ?? '-';
+          document.getElementById('completed').textContent = data.roadmap?.completed ?? '-';
+
+          document.getElementById('spend').textContent = (data.spending?.totalCost || 0).toFixed(2);
+          document.getElementById('calls').textContent = data.spending?.apiCalls || 0;
+        } catch (e) {}
+      }
+
+      refresh();
+      setInterval(refresh, 60000);
+    </script>
+  </body>
+</html>

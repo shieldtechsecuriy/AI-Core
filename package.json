@@ -1,17 +1,24 @@
 {
-  "name": "ai-core-claw-deployment",
-  "version": "1.0.0",
-  "description": "Claw deployment bot with Discord notifications",
+  "name": "openclaw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw autonomous system",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "web": "node web/server.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.3.1"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "axios": "^1.6.8",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "googleapis": "^133.0.0",
+    "node-schedule": "^2.1.1",
+    "nodemailer": "^6.9.14",
+    "openai": "^4.0.0",
+    "sqlite3": "^5.1.7",
+    "ssh2": "^1.15.0",
+    "winston": "^3.11.0"
   }
 }

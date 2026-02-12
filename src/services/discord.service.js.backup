@@ -1,0 +1,131 @@
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const logger = require('../utils/logger');
+
+class DiscordService {
+  constructor(config, taskService, approvalService, claudeService) {
+    this.config = config;
+    this.taskService = taskService;
+    this.approvalService = approvalService;
+    this.claudeService = claudeService;
+    
+    const AutoDebugService = require('./auto-debug.service');
+    this.autoDebugService = new AutoDebugService(claudeService);
+    
+    logger.info('Discord service initialized');
+  }
+
+  async initialize() {
+    if (!this.config.discordToken) {
+      logger.warn('Discord token not configured');
+      return;
+    }
+    
+    this.client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    });
+    
+    // Wait for bot to connect and be ready
+    await new Promise((resolve) => {
+      this.client.once('ready', () => {
+        this.isReady = true;
+        logger.info(`✅ Discord bot connected: ${this.client.user.tag}`);
+        resolve();
+      });
+      
+      this.client.login(this.config.discordToken);
+    });
+    
+    // Set up message handler
+    this.client.on('messageCreate', async (message) => {
+      if (message.author.bot || !message.content.startsWith('/')) return;
+      await this.handleCommand(message);
+    });
+  }
+
+    this.client = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    });
+
+    this.client.on('ready', () => {
+      logger.info(`✅ Discord bot: ${this.client.user.tag}`);
+    });
+
+    this.client.on('messageCreate', async (message) => {
+      if (message.author.bot || !message.content.startsWith('/')) return;
+      await this.handleCommand(message);
+    });
+
+    await this.client.login(this.config.discordToken);
+  }
+
+  async handleCommand(message) {
+    const [command, ...args] = message.content.slice(1).split(' ');
+    
+    switch (command.toLowerCase()) {
+      case 'help':
+        await message.reply('🤖 Commands: /help, /status, /build [desc], /tasks');
+        break;
+      case 'status':
+        await message.reply('✅ OpenClaw operational');
+        break;
+      case 'build':
+        await this.handleBuild(message, args);
+        break;
+      case 'tasks':
+        await message.reply(`📋 ${this.taskService.getAll().length} tasks`);
+        break;
+      default:
+        await message.reply(`❌ Unknown: ${command}`);
+    }
+  }
+
+  async handleBuild(message, args) {
+    if (!args.length) {
+      await message.reply('❌ Usage: /build [description]');
+      return;
+    }
+    
+    await message.reply('🔨 Building...');
+    const task = this.taskService.create({ type: 'build', description: args.join(' ') });
+    const code = await this.claudeService.generateCode(args.join(' '));
+    const result = await this.autoDebugService.testAndFix(task.id, code);
+    
+    this.taskService.update(task.id, { status: 'completed' });
+    await message.reply(`✅ Build complete: ${task.id}`);
+  }
+  async sendEmbed(embedData) {
+    try {
+      if (!this.isReady) {
+        logger.warn('Discord bot not ready yet, skipping notification');
+        return;
+      }
+      // Find the notification channel
+      const channel = this.client.channels.cache.find(
+        ch => ch.name === 'openclaw-notifications' || ch.name === 'general'
+      );
+      
+      if (!channel) {
+        logger.warn('No notification channel found');
+        return;
+      }
+
+      // Send embed message
+      await channel.send({
+        embeds: [{
+          title: embedData.title || 'OpenClaw Notification',
+          description: embedData.description || '',
+          color: embedData.color || 0x00ff00, // Green
+          fields: embedData.fields || [],
+          timestamp: new Date(),
+          footer: embedData.footer || { text: 'OpenClaw Autonomous System' }
+        }]
+      });
+      
+      logger.info('Discord notification sent:', embedData.title);
+    } catch (error) {
+      logger.error('Failed to send Discord notification:', error.message);
+    }
+  }
+
+}
+module.exports = DiscordService;

@@ -1,0 +1,111 @@
+const logger = require('../utils/logger');
+const schedule = require('node-schedule');
+const fs = require('fs').promises;
+const path = require('path');
+
+class AutonomousBuilderService {
+  constructor(claudeService, discordService) {
+    this.claudeService = claudeService;
+    this.discordService = discordService;
+  }
+
+  async start() {
+    logger.info('🏗️ Autonomous Builder starting...');
+    
+    // Build immediately on startup
+    setTimeout(() => this.buildNextFeature(), 5000);
+    
+    // Then every 2 hours
+    schedule.scheduleJob('0 */2 * * *', () => {
+      this.buildNextFeature();
+    });
+    
+    if (this.discordService?.sendEmbed) {
+      await this.discordService.sendEmbed({
+        title: '🏗️ AUTONOMOUS BUILDER ACTIVE',
+        description: 'Building features 24/7\n\nNeed something built? Just ask:\n`@OpenClaw build me a...`',
+        fields: [
+          { name: 'Builds', value: 'Every 2 hours', inline: true },
+          { name: 'Knowledge', value: 'ShieldTech docs loaded', inline: true }
+        ],
+        color: 0x3498db
+      });
+    }
+  }
+
+  async buildNextFeature() {
+    try {
+      logger.info('🔨 Building next feature...');
+      
+      const prompt = `You are building features for ShieldTech Security Solutions.
+
+Look at the roadmap and pick ONE feature that would provide the most value right now.
+
+Generate the code as JSON:
+{
+  "feature_name": "Device Status Dashboard",
+  "description": "Real-time monitoring of all security devices",
+  "files": [
+    {
+      "path": "components/DeviceDashboard.jsx",
+      "content": "import React from 'react'..."
+    }
+  ]
+}
+
+Return ONLY valid JSON.`;
+
+      const response = await this.claudeService.generate(prompt, {
+        maxTokens: 4096,
+        serviceName: 'Autonomous Builder'
+      });
+      
+      // Parse response
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      
+      if (!jsonMatch) {
+        logger.error('Could not parse build response');
+        return;
+      }
+      
+      const buildData = JSON.parse(jsonMatch[0]);
+      
+      // Save files
+      const buildDir = path.join(__dirname, '../../builds');
+      await fs.mkdir(buildDir, { recursive: true });
+      
+      for (const file of buildData.files || []) {
+        const filePath = path.join(buildDir, file.path);
+        const fileDir = path.dirname(filePath);
+        
+        await fs.mkdir(fileDir, { recursive: true });
+        await fs.writeFile(filePath, file.content);
+        logger.info(`✅ Created: ${file.path}`);
+      }
+      
+      // Notify Discord
+      if (this.discordService?.sendEmbed) {
+        await this.discordService.sendEmbed({
+          title: '✅ Feature Built',
+          description: `**${buildData.feature_name}**\n\n${buildData.description}`,
+          fields: [
+            { name: 'Files Created', value: `${buildData.files?.length || 0}`, inline: true },
+            { name: 'Location', value: '`builds/`', inline: true }
+          ],
+          color: 0x2ecc71,
+          footer: {
+            text: '💬 Want changes? Tag me: @OpenClaw modify the...'
+          }
+        });
+      }
+      
+      logger.info('✅ Build complete');
+      
+    } catch (error) {
+      logger.error('Build failed:', error);
+    }
+  }
+}
+
+module.exports = AutonomousBuilderService;

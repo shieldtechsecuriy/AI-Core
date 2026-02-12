@@ -1,0 +1,421 @@
+const AutoDebugService = require('./auto-debug.service');
+const ApprovalService = require('./approval.service');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const logger = require('../utils/logger');
+
+class DiscordService {
+  constructor(config) {
+    this.token = config.token;
+    this.enabled = config.enabled;
+    this.client = null;
+    this.commandChannel = null;
+  }
+
+  async initialize() {
+    if (!this.enabled) {
+      logger.info('Discord service disabled');
+      return;
+    }
+
+    this.client = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+      ]
+    });
+
+this.client.on('ready', () => {
+  logger.info(`Discord bot logged in as ${this.client.user.tag}`);
+  
+  // Get first text channel as command channel
+  const guild = this.client.guilds.cache.first();
+  if (guild) {
+    this.commandChannel = guild.channels.cache.find(ch => ch.type === 0);
+    
+    if (this.commandChannel) {
+      this.sendMessage('🤖 **OpenClaw Bot Online**\n\nReady to receive commands!\n\nType `/help` for available commands.');
+    } else {
+      logger.warn('No text channel found in Discord server');
+    }
+  } else {
+    logger.warn('Bot not in any Discord server');
+  }
+});
+    this.client.on('messageCreate', async (message) => {
+      if (message.author.bot) return;
+      if (!message.content.startsWith('/')) return;
+
+      await this.handleCommand(message);
+    });
+
+    await this.client.login(this.token);
+  }
+
+  async handleCommand(message) {
+    const command = message.content.toLowerCase().trim();
+    
+    logger.info(`Discord command received: ${command}`);
+
+    // Command routing
+    if (command === '/status') {
+      await this.sendStatus(message.channel);
+    } else if (command === '/health') {
+      await this.sendHealth(message.channel);
+    } else if (command === '/costs') {
+      await this.sendCosts(message.channel);
+    } else if (command === '/tasks') {
+      await this.sendTasks(message.channel);
+    } else if (command.startsWith('/build ')) {
+      await this.handleBuild(message);
+    } else if (command.startsWith('/approve')) {
+      await this.handleApproval(message);
+    } else if (command === '/help') {
+      await this.sendHelp(message.channel);
+    } else {
+      await message.reply('❓ Unknown command. Type `/help` for available commands.');
+    }
+  }
+
+  async sendMessage(text, channel = null) {
+    if (!this.enabled || !this.client) return;
+    
+    const targetChannel = channel || this.commandChannel;
+    if (!targetChannel) {
+      logger.error('No Discord channel available');
+      return;
+    }
+
+    try {
+      await targetChannel.send(text);
+    } catch (error) {
+      logger.error('Failed to send Discord message:', error);
+    }
+  }
+
+  async sendEmbed(embedData, channel = null) {
+    const embed = new EmbedBuilder()
+      .setColor(embedData.color || '#0099ff')
+      .setTitle(embedData.title)
+      .setDescription(embedData.description)
+      .setTimestamp();
+
+    if (embedData.fields) {
+      embed.addFields(embedData.fields);
+    }
+
+    const targetChannel = channel || this.commandChannel;
+    await targetChannel.send({ embeds: [embed] });
+  }
+
+  async sendStatus(channel) {
+    await this.sendEmbed({
+      color: '#00ff00',
+      title: '📊 OpenClaw Status',
+      description: 'System operational',
+      fields: [
+        { name: 'Uptime', value: process.uptime().toFixed(0) + 's', inline: true },
+        { name: 'Tasks', value: '0 queued', inline: true },
+        { name: 'Budget', value: '$1.50/day', inline: true }
+      ]
+    }, channel);
+  }
+
+  async sendHealth(channel) {
+    const axios = require('axios');
+    
+    try {
+      // Check Pi connectivity
+      const pi4CoreHealth = await axios.get('http://100.127.213.67:3001/health', { timeout: 5000 })
+        .then(() => '✅ Online')
+        .catch(() => '❌ Offline');
+      
+      const pi4AutoHealth = await axios.get('http://100.104.230.113:5678', { timeout: 5000 })
+        .then(() => '✅ Online')
+        .catch(() => '❌ Offline');
+
+      await this.sendEmbed({
+        color: '#0099ff',
+        title: '🏥 Health Check',
+        fields: [
+          { name: 'OpenClaw Master (GCP)', value: '✅ Online', inline: true },
+          { name: 'Pi4-Core', value: pi4CoreHealth, inline: true },
+          { name: 'Pi4-Auto (n8n)', value: pi4AutoHealth, inline: true }
+        ]
+      }, channel);
+    } catch (error) {
+      await channel.send('❌ Health check failed');
+    }
+  }
+
+  async sendCosts(channel) {
+    await this.sendEmbed({
+      color: '#ffaa00',
+      title: '💰 Cost Report',
+      description: 'Current spending vs budget',
+      fields: [
+        { name: 'Today', value: '$0.00 / $1.50', inline: true },
+        { name: 'This Month', value: '$0.00 / $45.00', inline: true },
+        { name: 'Status', value: '✅ Under budget', inline: true }
+      ]
+    }, channel);
+  }
+
+  async sendTasks(channel) {
+    await this.sendEmbed({
+      color: '#00aaff',
+      title: '📋 Task Queue',
+      description: 'No tasks pending',
+      fields: [
+        { name: 'Queued', value: '0', inline: true },
+        { name: 'In Progress', value: '0', inline: true },
+        { name: 'Awaiting Approval', value: '0', inline: true }
+      ]
+    }, channel);
+  }
+
+  async handleApproval(message) {
+    await message.reply('✅ Approval system not yet implemented. Coming soon!');
+  }
+
+  async sendHelp(channel) {
+    await this.sendEmbed({
+      color: '#5865F2',
+      title: '🤖 OpenClaw Commands',
+      description: 'Available commands:',
+      fields: [
+        { name: '/status', value: 'System status overview' },
+        { name: '/health', value: 'Health check (GCP + Pis)' },
+        { name: '/costs', value: 'Budget and spending' },
+        { name: '/tasks', value: 'View task queue' },
+        { name: '/approve [id]', value: 'Approve pending task' },
+        { name: '/help', value: 'Show this help message' },
+        { name: '/build [description]', value: 'Build a feature automatically' },
+      ]
+    }, channel);
+  }
+
+  async notifyTaskComplete(task) {
+    await this.sendEmbed({
+      color: '#00ff00',
+      title: '✅ Task Complete',
+      description: task.name,
+      fields: [
+        { name: 'Duration', value: task.duration || 'N/A', inline: true },
+        { name: 'Cost', value: `$${task.cost || 0}`, inline: true },
+        { name: 'Status', value: 'Success', inline: true }
+      ]
+    });
+  }
+
+  async requestApproval(task) {
+    await this.sendEmbed({
+      color: '#ffaa00',
+      title: '🤖 Approval Required',
+      description: task.description,
+      fields: [
+        { name: 'Estimated Cost', value: `$${task.estimatedCost}` },
+        { name: 'Action', value: `Reply: \`/approve ${task.id}\`` }
+      ]
+    });
+  }
+async handleBuild(message) {
+  const taskDescription = message.content.substring(7).trim(); // Remove "/build "
+  
+  if (!taskDescription) {
+    await message.reply('❌ Please provide a task description.\n\nExample: `/build device monitoring service`');
+    return;
+  }
+
+  await message.reply(`🤖 Analyzing task: "${taskDescription}"\n\nPlease wait...`);
+
+  try {
+    const { claude, taskQueue } = require('../index');
+    
+    // Create task
+    const task = taskQueue.createTask(taskDescription);
+    
+    // Analyze with Claude
+    const analysis = await claude.analyzeTask(taskDescription);
+    taskQueue.updateTask(task.id, {
+      status: 'analyzed',
+      analysis,
+      estimatedCost: analysis.estimatedCost
+    });
+
+    // Check budget
+    const budgetCheck = taskQueue.canAfford(analysis.estimatedCost);
+    if (!budgetCheck.allowed) {
+      await this.sendEmbed({
+        color: '#ff0000',
+        title: '❌ Budget Exceeded',
+        description: budgetCheck.reason,
+        fields: [
+          { name: 'Task', value: taskDescription },
+          { name: 'Estimated Cost', value: `$${analysis.estimatedCost}` },
+          { name: 'Daily Remaining', value: `$${budgetCheck.dailyRemaining?.toFixed(2) || 0}` }
+        ]
+      }, message.channel);
+      return;
+    }
+
+    // Check if approval needed
+    const needsApproval = taskQueue.needsApproval(analysis.estimatedCost);
+
+    // Send analysis
+    await this.sendEmbed({
+color: '#00aaff',
+      title: '📋 Task Analysis',
+      description: `**${analysis.description || description}**`,
+      fields: [
+        { name: 'Task ID', value: task.id, inline: true },
+        { name: 'Estimated Cost', value: `$${analysis.estimatedCost || '0.15'}`, inline: true },
+        { name: 'Estimated Time', value: analysis.estimatedTime || '10-15 minutes', inline: true },
+        { name: 'Complexity', value: analysis.complexity || 'medium', inline: true },
+        { name: 'Deployment Target', value: analysis.deploymentTarget || 'Pi4-Core', inline: true },
+        { name: 'Files to Create', value: analysis.requiredFiles?.join('\n') || 'TBD' }
+      ]
+    }, message.channel);
+
+    if (needsApproval) {
+      await message.channel.send(`⚠️ **Approval Required** (cost > $${taskQueue.approvalThreshold})\n\nReply: \`/approve ${task.id}\` to proceed`);
+    } else {
+      await message.channel.send(`✅ Auto-approved (under $${taskQueue.approvalThreshold} threshold)\n\nBuilding now...`);
+      
+      // Auto-build
+      await this.executeBuild(task, message.channel);
+    }
+
+  } catch (error) {
+    await message.reply(`❌ Error: ${error.message}`);
+    logger.error('Build command failed', error);
+  }
+}
+
+async executeBuild(task, channel) {
+    const { claude, executor, taskQueue } = require('../index');
+    
+    await channel.send(`🔨 Building: ${task.description}...`);
+    
+    // Generate code with Claude
+    taskQueue.updateTask(task.id, { status: 'generating' });
+    const result = await claude.buildFeature(task);
+    
+    // Parse generated files
+    const files = claude.parseGeneratedFiles(result.content);
+    let deploymentSteps = await claude.parseDeploymentSteps(result.content);
+    
+    // Ensure deploymentSteps is an array
+    if (typeof deploymentSteps === 'string') {
+      deploymentSteps = deploymentSteps.split('\n').filter(s => s.trim());
+    }
+    if (!Array.isArray(deploymentSteps)) {
+      deploymentSteps = [];
+    }
+    
+    taskQueue.updateTask(task.id, {
+      status: 'generated',
+      generatedCode: result.content,
+      files: files.map(f => f.path)
+    });
+    
+    await channel.send(`✅ Generated ${files.length} files\n\n🔬 Testing and auto-debugging...`);
+    
+    // AUTO-DEBUG: Test and fix automatically
+    taskQueue.updateTask(task.id, { status: 'testing' });
+    const debugResult = await this.autoDebug.testAndFix(files, deploymentSteps, 'pi4-core');
+    
+    if (!debugResult.success) {
+      await channel.send(`❌ Build failed after ${debugResult.attempt} attempts\n\nLast error: ${debugResult.lastError}`);
+      taskQueue.updateTask(task.id, { 
+        status: 'failed',
+        error: debugResult.lastError 
+      });
+      return;
+    }
+    
+    await channel.send(`✅ Tests passed! Auto-fixes applied: ${debugResult.fixes.length}`);
+    
+    // REQUEST APPROVAL
+    taskQueue.updateTask(task.id, { status: 'awaiting_approval' });
+    const approvalMessageId = await this.approvalService.requestApproval(
+      { channel },
+      task,
+      debugResult
+    );
+    
+    // Store task data for approval handler
+    taskQueue.updateTask(task.id, {
+      approvalMessageId,
+      debugResult
+    });
+    
+    // Record cost
+    taskQueue.recordCost(task.id, result.cost);
+  }
+
+  
+
+  setupReactionHandler() {
+    this.client.on('messageReactionAdd', async (reaction, user) => {
+      // Ignore bot reactions
+      if (user.bot) return;
+
+      // Fetch partial messages
+      if (reaction.partial) {
+        try {
+          await reaction.fetch();
+        } catch (error) {
+          console.error('Error fetching reaction:', error);
+          return;
+        }
+      }
+
+      const result = await this.approvalService.handleReaction(
+        reaction.message.id,
+        reaction.emoji,
+        user.id
+      );
+
+      if (!result) return;
+
+      const { claude, executor, taskQueue } = require('../index');
+      const channel = await this.client.channels.fetch(result.channelId);
+
+      if (result.action === 'approved') {
+        await channel.send('🚀 Deploying to production...');
+        
+        try {
+          // Deploy to all targets
+          const deployResult = await executor.deployToPi(
+            'pi4-core',
+            result.files,
+            result.deploymentSteps
+          );
+
+          if (deployResult.success) {
+            await channel.send('✅ Deployment complete!');
+            taskQueue.updateTask(result.taskId, { status: 'deployed' });
+          } else {
+            await channel.send(`❌ Deployment failed: ${deployResult.error}`);
+            taskQueue.updateTask(result.taskId, { status: 'failed' });
+          }
+        } catch (error) {
+          await channel.send(`❌ Deployment error: ${error.message}`);
+          taskQueue.updateTask(result.taskId, { status: 'failed' });
+        }
+        
+      } else if (result.action === 'rejected') {
+        await channel.send('❌ Build rejected');
+        taskQueue.updateTask(result.taskId, { status: 'rejected' });
+        
+      } else if (result.action === 'rebuild') {
+        await channel.send('🔄 Rebuilding...');
+        const task = taskQueue.getTask(result.taskId);
+        await this.executeBuild(task, channel);
+      }
+    });
+  }
+}
+
+module.exports = DiscordService;

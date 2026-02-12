@@ -1,0 +1,150 @@
+const logger = require('../utils/logger');
+
+class AutonomousBuilderService {
+  constructor(claudeService, discordService) {
+    this.claude = claudeService;
+    this.discord = discordService;
+    this.isBuilding = false;
+  }
+
+  async start() {
+    logger.info('🤖 Autonomous Builder Service started');
+    
+    // Build every 30 minutes
+    setInterval(() => {
+      if (!this.isBuilding) {
+        this.buildNextFeature().catch(err => {
+          logger.error('Build cycle error:', err);
+        });
+      }
+    }, 30 * 60 * 1000);
+  }
+
+  /**
+   * Extract JSON from Claude's response
+   * Handles markdown code blocks and malformed JSON
+   */
+  extractJSON(text) {
+    try {
+      // Try direct parse first
+      return JSON.parse(text);
+    } catch (e) {
+      // Look for JSON in code blocks
+      const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[1]);
+        } catch (e2) {
+          logger.error('Failed to parse JSON from code block:', e2.message);
+        }
+      }
+
+      // Look for JSON without code blocks
+      const plainMatch = text.match(/\{[\s\S]*\}/);
+      if (plainMatch) {
+        try {
+          return JSON.parse(plainMatch[0]);
+        } catch (e3) {
+          logger.error('Failed to parse plain JSON:', e3.message);
+        }
+      }
+
+      // If all parsing fails, log the problematic text
+      logger.error('Could not extract valid JSON from response');
+      logger.error('Response preview:', text.substring(0, 500));
+      return null;
+    }
+  }
+
+  async buildNextFeature() {
+    if (this.isBuilding) {
+      logger.info('⏭️ Build already in progress, skipping');
+      return;
+    }
+
+    this.isBuilding = true;
+
+    try {
+      logger.info('🔨 Starting autonomous build cycle...');
+
+      const prompt = `You are OpenClaw's autonomous builder for ShieldTech.
+
+Select the NEXT highest-priority feature to build from the roadmap.
+
+Return ONLY a JSON object (no markdown, no explanations):
+
+{
+  "feature_name": "Feature Name",
+  "priority": "high",
+  "deployment_target": "pi4-auto",
+  "estimated_time": "2 hours",
+  "description": "What this does",
+  "files_needed": ["file1.js", "file2.js"],
+  "dependencies": ["service1", "service2"]
+}
+
+Choose from:
+- N8N Workflow Generator (pi4-auto) - HIGH PRIORITY
+- Credential Vault Integration (pi4-auto) - HIGH PRIORITY  
+- Device Monitoring Dashboard (pi4-core) - MEDIUM
+- GPS Tracking (pi4-core) - MEDIUM
+- Alarm Panel Management (pi4-core) - LOW
+
+Respond with JSON only.`;
+
+      const response = await this.claude.chat(prompt);
+      logger.info("DEBUG - Raw Claude response:", response.substring(0, 300));
+      
+      if (!response) {
+        throw new Error('No response from Claude');
+      }
+
+      // Extract and parse JSON
+      const feature = this.extractJSON(response);
+      
+      if (!feature) {
+        throw new Error('Could not parse feature JSON from Claude response');
+      }
+
+      // Validate required fields
+      if (!feature.feature_name || !feature.deployment_target) {
+        throw new Error('Invalid feature object: missing required fields');
+      }
+
+      logger.info(`✅ Selected feature: ${feature.feature_name}`);
+
+      // Send to Discord
+      if (this.discord?.sendEmbed) {
+        await this.discord.sendEmbed({
+          title: '🔨 Building Feature',
+          description: feature.description || 'No description',
+          fields: [
+            { name: '📦 Feature', value: feature.feature_name, inline: true },
+            { name: '🎯 Priority', value: feature.priority || 'medium', inline: true },
+            { name: '🖥️ Target', value: feature.deployment_target, inline: true },
+            { name: '⏱️ Est. Time', value: feature.estimated_time || 'Unknown', inline: true },
+            { name: '📁 Files', value: feature.files_needed?.join(', ') || 'TBD', inline: false }
+          ],
+          color: 0x3498db
+        });
+      }
+
+      // TODO: Actually build the feature
+      logger.info('🚧 Feature building not yet implemented');
+
+    } catch (error) {
+      logger.error('Build failed:', error);
+      
+      // Notify Discord of failure
+      if (this.discord?.sendMessage) {
+        await this.discord.sendMessage(
+          `⚠️ Build failed: ${error.message}\n\nCheck logs for details.`
+        );
+      }
+    } finally {
+      this.isBuilding = false;
+    }
+  }
+}
+
+module.exports = AutonomousBuilderService;

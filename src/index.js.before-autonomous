@@ -1,0 +1,147 @@
+require('dotenv').config();
+const logger = require('./utils/logger');
+const DiscordService = require('./services/discord.service');
+const DatabaseService = require('./services/database.service');
+const DailyReportService = require('./services/daily-report.service');
+const ClaudeService = require('./services/claude.service');
+const TokenTrackerService = require('./services/token-tracker.service');
+const ConversationalAssistantService = require('./services/conversational-assistant.service');
+const MessageRouter = require('./services/message-router.service');
+const AutonomousBuilderService = require('./services/autonomous-builder.service');
+const BusinessStrategistService = require('./services/business-strategist.service');
+const SecurityGuardianService = require('./services/security-guardian.service');
+const CompetitorIntelligenceService = require('./services/competitor-intelligence.service');
+const SSHSecurityMonitor = require('./services/ssh-security-monitor.service');
+const DeploymentTracker = require('./services/deployment-tracker.service');
+
+async function main() {
+  try {
+    logger.info('🚀 Starting OpenClaw...');
+    
+    const discordService = new DiscordService({
+      discordToken: process.env.DISCORD_BOT_TOKEN,
+      enabled: process.env.DISCORD_ENABLED === 'true'
+    });
+    await discordService.initialize();
+    await new Promise(r => setTimeout(r, 2000));
+    
+    const databaseService = new DatabaseService();
+    await databaseService.initialize();
+    
+    const tokenTracker = new TokenTrackerService(discordService, databaseService);
+    await tokenTracker.start();
+    
+    const dailyReport = new DailyReportService(databaseService, tokenTracker, discordService);
+    await dailyReport.start();
+    
+    const claudeService = new ClaudeService();
+    claudeService.setTokenTracker(tokenTracker);
+    
+    const assistant = new ConversationalAssistantService(claudeService, discordService);
+    await assistant.start();
+    
+    // ============================================================
+    // CREATE ALL SERVICES BEFORE ROUTER
+    // ============================================================
+    
+    const builder = new AutonomousBuilderService(claudeService, discordService);
+    await builder.start();
+    
+    const strategist = new BusinessStrategistService(claudeService, discordService);
+    await strategist.start();
+    
+    const security = new SecurityGuardianService(discordService);
+    await security.start();
+    
+    const competitor = new CompetitorIntelligenceService(claudeService, discordService);
+    await competitor.start();
+    
+    const deploymentTracker = new DeploymentTracker(discordService);
+    await deploymentTracker.start();
+    
+    const sshMonitor = new SSHSecurityMonitor(discordService);
+    await sshMonitor.start();
+    
+    // ============================================================
+    // NOW CREATE ROUTER (after all services exist)
+    // ============================================================
+    
+    if (discordService.client) {
+      const router = new MessageRouter(discordService.client);
+      
+      // Register build command handler (priority 100)
+      router.registerHandler(
+        'Build Command',
+        100,
+        (msg) => msg.content.startsWith('/build') || 
+                 (msg.content.includes('@OpenClaw') && msg.content.toLowerCase().includes('build')),
+        async (msg) => {
+          await msg.reply('🔨 Starting autonomous build...');
+          try {
+            await builder.buildNextFeature();
+            await msg.reply('✅ Build cycle complete! Check notifications for details.');
+          } catch (error) {
+            await msg.reply(`❌ Build failed: ${error.message}`);
+            logger.error('Build command error:', error);
+          }
+        }
+      );
+      
+      // Register deployment commands (priority 100)
+      router.registerHandler(
+        'Deployment Commands',
+        100,
+        (msg) => msg.content.startsWith('/deploy') || msg.content.startsWith('/status'),
+        async (msg) => {
+          if (msg.content.startsWith('/deploy')) {
+            await msg.reply('🚀 Deployment command received!');
+            // Trigger deployment logic here
+          } else if (msg.content.startsWith('/status')) {
+            await msg.reply('📊 System status: All services operational');
+          }
+        }
+      );
+      
+      // Register autonomous builder triggers (priority 80)
+      router.registerHandler(
+        'Autonomous Builder Mention',
+        80,
+        (msg) => msg.content.includes('@OpenClaw') && msg.content.toLowerCase().includes('build'),
+        async (msg) => {
+          await msg.reply('🤖 Autonomous builder triggered!');
+          await builder.buildNextFeature();
+        }
+      );
+      
+      // Conversational assistant fallback (priority 10)
+      router.registerConversationalHandler(async (msg) => {
+        await assistant.handleMessage(msg);
+      });
+      
+      router.initialize();
+      logger.info('✅ Message router active with priority system');
+    }
+    
+    logger.info('✅ ALL SERVICES RUNNING!');
+    
+    if (discordService?.sendEmbed) {
+      await discordService.sendEmbed({
+        title: '🎉 OPENCLAW ACTIVE',
+        description: '**All systems operational with message router!**',
+        fields: [
+          { name: '🗄️', value: 'Database', inline: true },
+          { name: '📊', value: 'Daily Reports', inline: true },
+          { name: '💰', value: 'Cost Tracking', inline: true },
+          { name: '🔨', value: 'Autonomous Builder', inline: true },
+          { name: '🔀', value: 'Message Router', inline: true }
+        ],
+        color: 0x2ecc71
+      });
+    }
+    
+  } catch (error) {
+    logger.error('Startup failed:', error);
+  }
+}
+
+main();
