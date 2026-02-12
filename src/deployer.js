@@ -37,6 +37,9 @@ class Deployer {
     if (action === 'list') {
       return { action: 'list' };
     }
+    if (action === 'restart') {
+      return { action: 'restart' };
+    }
 
     const target = parts[0]?.toLowerCase();
     const flags = parts.slice(1);

@@ -30,7 +30,7 @@ client.on('messageCreate', async (message) => {
     await message.reply(
       `Usage: \`${config.deploy.commandPrefix} <target>\`\n` +
       `Available targets: ${deployer.getAvailableTargets().join(', ')}\n` +
-      `Other commands: \`${config.deploy.commandPrefix} list\`, \`${config.deploy.commandPrefix} status\``
+      `Other commands: \`${config.deploy.commandPrefix} list\`, \`${config.deploy.commandPrefix} status\`, \`${config.deploy.commandPrefix} restart\``
     );
     return;
   }
@@ -46,6 +46,14 @@ client.on('messageCreate', async (message) => {
   if (parsed.action === 'status') {
     await message.reply(deployer.getActiveTasksSummary());
     return;
+  }
+
+  if (parsed.action === 'restart') {
+    await message.reply('Restarting OpenClaw bot...');
+    if (config.deploy.notifyOnComplete && notifier) {
+      await notifier.sendInfo('OpenClaw bot is restarting...');
+    }
+    process.exit(0);
   }
 
   // Execute deployment
