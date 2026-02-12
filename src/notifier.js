@@ -22,16 +22,20 @@ class Notifier {
     const channel = await this.getChannel();
     if (!channel) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle('Deployment Started')
-      .setColor(0xf0ad4e)
-      .addFields(
-        { name: 'Target', value: target, inline: true },
-        { name: 'Requested By', value: requestedBy, inline: true },
-      )
-      .setTimestamp();
+    try {
+      const embed = new EmbedBuilder()
+        .setTitle('Deployment Started')
+        .setColor(0xf0ad4e)
+        .addFields(
+          { name: 'Target', value: target, inline: true },
+          { name: 'Requested By', value: requestedBy, inline: true },
+        )
+        .setTimestamp();
 
-    await channel.send({ embeds: [embed] });
+      await channel.send({ embeds: [embed] });
+    } catch (err) {
+      console.error('Failed to send deploy-started notification:', err.message);
+    }
   }
 
   /**
@@ -41,19 +45,24 @@ class Notifier {
     const channel = await this.getChannel();
     if (!channel) return;
 
-    const success = result.success;
-    const embed = new EmbedBuilder()
-      .setTitle(success ? 'Deployment Complete' : 'Deployment Failed')
-      .setColor(success ? 0x5cb85c : 0xd9534f)
-      .addFields(
-        { name: 'Target', value: target, inline: true },
-        { name: 'Status', value: success ? 'Success' : 'Failed', inline: true },
-        { name: 'Requested By', value: requestedBy, inline: true },
-        { name: 'Output', value: `\`\`\`\n${result.output.slice(0, 1000)}\n\`\`\`` },
-      )
-      .setTimestamp();
+    try {
+      const success = result.success;
+      const output = (result.output || 'No output').slice(0, 1000);
+      const embed = new EmbedBuilder()
+        .setTitle(success ? 'Deployment Complete' : 'Deployment Failed')
+        .setColor(success ? 0x5cb85c : 0xd9534f)
+        .addFields(
+          { name: 'Target', value: target, inline: true },
+          { name: 'Status', value: success ? 'Success' : 'Failed', inline: true },
+          { name: 'Requested By', value: requestedBy, inline: true },
+          { name: 'Output', value: `\`\`\`\n${output}\n\`\`\`` },
+        )
+        .setTimestamp();
 
-    await channel.send({ embeds: [embed] });
+      await channel.send({ embeds: [embed] });
+    } catch (err) {
+      console.error('Failed to send task-complete notification:', err.message);
+    }
   }
 
   /**
@@ -62,7 +71,11 @@ class Notifier {
   async sendInfo(message) {
     const channel = await this.getChannel();
     if (!channel) return;
-    await channel.send(message);
+    try {
+      await channel.send(message);
+    } catch (err) {
+      console.error('Failed to send info notification:', err.message);
+    }
   }
 }
 

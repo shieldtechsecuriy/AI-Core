@@ -66,16 +66,22 @@ client.on('messageCreate', async (message) => {
     await notifier.notifyDeployStarted(target, requestedBy);
   }
 
-  const result = await deployer.execute(target);
+  let result;
+  try {
+    result = await deployer.execute(target);
+  } catch (err) {
+    result = { success: false, output: err.message || 'Unknown deployment error' };
+  }
 
   // Always reply in the originating channel
+  const output = result.output || 'No output';
   if (result.success) {
     await message.reply(
-      `Deployment to **${target}** completed successfully.\n\`\`\`\n${result.output}\n\`\`\``
+      `Deployment to **${target}** completed successfully.\n\`\`\`\n${output}\n\`\`\``
     );
   } else {
     await message.reply(
-      `Deployment to **${target}** failed.\n\`\`\`\n${result.output}\n\`\`\``
+      `Deployment to **${target}** failed.\n\`\`\`\n${output}\n\`\`\``
     );
   }
 
