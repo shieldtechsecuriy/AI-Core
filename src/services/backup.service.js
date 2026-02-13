@@ -5,6 +5,8 @@ const schedule = require('node-schedule');
 const { google } = require('googleapis');
 const logger = require('../utils/logger');
 
+const SSH_READY_TIMEOUT_MS = parseInt(process.env.SSH_READY_TIMEOUT_MS || '30000', 10);
+
 class BackupService {
   constructor(discordService) {
     this.discordService = discordService;
@@ -182,7 +184,6 @@ class BackupService {
     }
     if (process.env.GOOGLE_SERVICE_ACCOUNT_PATH) {
       const credentials = require(process.env.GOOGLE_SERVICE_ACCOUNT_PATH);
-const SSH_READY_TIMEOUT_MS = parseInt(process.env.SSH_READY_TIMEOUT_MS || '30000', 10);
       return new google.auth.JWT(
         credentials.client_email,
         null,

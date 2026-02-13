@@ -3,31 +3,32 @@ const schedule = require('node-schedule');
 const { google } = require('googleapis');
 
 class IdeaApprovalWorkflowService {
-  constructor(claudeService, discordService, googleService) {
+  constructor(claudeService, discordService, googleService, deploymentEngine = null, databaseService = null) {
     this.claudeService = claudeService;
     this.discordService = discordService;
     this.googleService = googleService;
+    this.deploymentEngine = deploymentEngine;
+    this.db = databaseService;
     this.sheets = google.sheets({ version: 'v4', auth: googleService.auth });
     this.spreadsheetId = process.env.IDEA_APPROVAL_SHEET_ID || null;
   }
 
   async start() {
     logger.info('💡 Idea Approval Workflow starting...');
-    
-    // Create approval spreadsheet if it doesn't exist
+
     if (!this.spreadsheetId) {
       await this.createApprovalSheet();
     }
-    
+
     // Generate ideas every 4 hours
     schedule.scheduleJob('0 */4 * * *', () => this.generateNewIdeas());
-    
+
     // Check for approvals every 15 minutes
     schedule.scheduleJob('*/15 * * * *', () => this.checkApprovals());
-    
+
     // Initial idea generation in 10 seconds
     setTimeout(() => this.generateNewIdeas(), 10000);
-    
+
     if (this.discordService?.sendEmbed) {
       await this.discordService.sendEmbed({
         title: '🔄 IDEA APPROVAL WORKFLOW ACTIVE',
@@ -42,12 +43,23 @@ class IdeaApprovalWorkflowService {
     }
   }
 
+  async isRoadmapComplete() {
+    if (!this.db) return true;
+    try {
+      const progress = await this.db.getRoadmapProgress();
+      return progress.pending.length === 0 && progress.inProgress.length === 0;
+    } catch (err) {
+      logger.warn('Could not check roadmap status:', err.message);
+      return false;
+    }
+  }
+
   async createApprovalSheet() {
     try {
       logger.info('📊 Creating Business Ideas Approval Sheet...');
-      
+
       const sheets = google.sheets({ version: 'v4', auth: this.googleService.auth });
-      
+
       const spreadsheet = await sheets.spreadsheets.create({
         requestBody: {
           properties: {
@@ -75,12 +87,12 @@ class IdeaApprovalWorkflowService {
           }]
         }
       });
-      
+
       this.spreadsheetId = spreadsheet.data.spreadsheetId;
       logger.info(`✅ Created sheet: ${this.spreadsheetId}`);
-      
+
       const sheetUrl = `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}`;
-      
+
       if (this.discordService?.sendEmbed) {
         await this.discordService.sendEmbed({
           title: '📊 APPROVAL SHEET CREATED',
@@ -88,7 +100,7 @@ class IdeaApprovalWorkflowService {
           color: 0x3498db
         });
       }
-      
+
       return this.spreadsheetId;
     } catch (error) {
       logger.error('Failed to create approval sheet:', error);
@@ -98,12 +110,19 @@ class IdeaApprovalWorkflowService {
 
   async generateNewIdeas() {
     try {
+      // Block idea generation until the full roadmap is complete
+      const roadmapDone = await this.isRoadmapComplete();
+      if (!roadmapDone) {
+        logger.info('💡 Roadmap not complete yet — skipping idea generation');
+        return;
+      }
+
       logger.info('💡 Generating new business ideas...');
-      
+
       const prompt = `Generate 3 concrete business ideas for ShieldTech Security. Return ONLY JSON array: [{"name":"...","category":"...","description":"...","estimated_revenue":"...","build_time":"..."}]`;
 
       const response = await this.claudeService.generate(prompt);
-      
+
       let ideas;
       try {
         const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -113,13 +132,26 @@ class IdeaApprovalWorkflowService {
         logger.error('Could not parse ideas:', e.message);
         return;
       }
-      
+
       for (const idea of ideas) {
         await this.addIdeaToSheet(idea);
       }
-      
+
       logger.info(`✅ Added ${ideas.length} ideas to approval sheet`);
-      
+
+      // Notify owner on Discord
+      if (this.discordService?.sendEmbed) {
+        const ideaList = ideas.map(i => `• **${i.name}** — ${i.description}`).join('\n');
+        await this.discordService.sendEmbed({
+          title: '💡 NEW IDEAS AWAITING YOUR APPROVAL',
+          description:
+            `${ideas.length} new ideas have been added to the approval sheet.\n\n` +
+            `${ideaList}\n\n` +
+            `Mark **Y** in the approval column to build, **N** to reject.`,
+          color: 0xf39c12
+        });
+      }
+
     } catch (error) {
       logger.error('Idea generation failed:', error);
     }
@@ -137,7 +169,7 @@ class IdeaApprovalWorkflowService {
       '',
       ''
     ];
-    
+
     await this.sheets.spreadsheets.values.append({
       spreadsheetId: this.spreadsheetId,
       range: 'Ideas Pending Approval!A:I',
@@ -148,20 +180,32 @@ class IdeaApprovalWorkflowService {
 
   async checkApprovals() {
     try {
+      // Don't process approvals until roadmap is done
+      const roadmapDone = await this.isRoadmapComplete();
+      if (!roadmapDone) return;
+
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range: 'Ideas Pending Approval!A2:I'
       });
-      
+
       const rows = response.data.values || [];
-      
+
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const approval = row[7]?.toUpperCase();
+        const approval = (row[7] || '').toUpperCase();
         const status = row[6];
-        
+
         if (approval === 'Y' && status === 'Pending') {
           await this.buildApprovedIdea(row[1], row[3], i + 2);
+        } else if (approval === 'N' && status === 'Pending') {
+          // Mark denied
+          await this.sheets.spreadsheets.values.update({
+            spreadsheetId: this.spreadsheetId,
+            range: `Ideas Pending Approval!G${i + 2}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [['❌ Denied']] }
+          });
         }
       }
     } catch (error) {
@@ -171,25 +215,79 @@ class IdeaApprovalWorkflowService {
 
   async buildApprovedIdea(ideaName, description, rowNumber) {
     try {
-      logger.info(`🔨 Building: ${ideaName}`);
-      
-      if (this.discordService?.sendEmbed) {
-        await this.discordService.sendEmbed({
-          title: '🚀 BUILDING APPROVED IDEA',
-          description: ideaName,
-          color: 0x2ecc71
-        });
-      }
-      
+      logger.info(`🔨 Building approved idea: ${ideaName}`);
+
+      // Update sheet status to "Building..."
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
         range: `Ideas Pending Approval!G${rowNumber}`,
         valueInputOption: 'RAW',
-        requestBody: { values: [['✅ Built']] }
+        requestBody: { values: [['🔨 Building...']] }
       });
-      
+
+      if (this.discordService?.sendEmbed) {
+        await this.discordService.sendEmbed({
+          title: '🚀 BUILDING APPROVED IDEA',
+          description: `**${ideaName}**\n\n${description || 'No description'}`,
+          color: 0x2ecc71
+        });
+      }
+
+      // Build through the deployment engine if available
+      if (this.deploymentEngine) {
+        const feature = {
+          feature_name: ideaName,
+          description: description || ideaName,
+          priority: 'medium',
+          deployment_target: 'pi4-core',
+          files_needed: [],
+          needs_n8n: false,
+          needs_sheets: false
+        };
+
+        await this.deploymentEngine.buildAndDeploy(feature);
+
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `Ideas Pending Approval!G${rowNumber}`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [['✅ Deployed']] }
+        });
+
+        if (this.discordService?.sendEmbed) {
+          await this.discordService.sendEmbed({
+            title: '✅ IDEA DEPLOYED SUCCESSFULLY',
+            description: `**${ideaName}** is now live!`,
+            color: 0x2ecc71
+          });
+        }
+      } else {
+        // No deployment engine — just mark as built
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `Ideas Pending Approval!G${rowNumber}`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [['✅ Built (manual deploy needed)']] }
+        });
+      }
+
     } catch (error) {
-      logger.error(`Build failed:`, error);
+      logger.error(`Build failed for idea ${ideaName}:`, error);
+
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `Ideas Pending Approval!G${rowNumber}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [['❌ Build Failed']] }
+      });
+
+      if (this.discordService?.sendEmbed) {
+        await this.discordService.sendEmbed({
+          title: '❌ IDEA BUILD FAILED',
+          description: `**${ideaName}**\n\n${error.message}`,
+          color: 0xe74c3c
+        });
+      }
     }
   }
 }

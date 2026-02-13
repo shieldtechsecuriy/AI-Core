@@ -24,6 +24,7 @@ const PasswordVaultService = require('./services/password-vault.service');
 const BackupService = require('./services/backup.service');
 const SelfHealService = require('./services/self-heal.service');
 const UpdateManagerService = require('./services/update-manager.service');
+const RoadmapProgressTracker = require('./services/roadmap-progress-tracker.service');
 
 async function main() {
   try {
@@ -103,7 +104,10 @@ async function main() {
       autonomyControl
     );
     await builder.start();
-    
+
+    // Initialize Roadmap Progress Tracker
+    const roadmapTracker = new RoadmapProgressTracker(databaseService, discordService);
+
     // Initialize other services
     const strategist = new BusinessStrategistService(claudeService, discordService, autonomyControl);
     await strategist.start();
@@ -249,6 +253,21 @@ async function main() {
         }
       );
 
+      // Roadmap status command
+      router.registerHandler(
+        'Roadmap Status Command',
+        100,
+        (msg) => msg.content.startsWith('/roadmap-status'),
+        async (msg) => {
+          try {
+            await roadmapTracker.sendProgressReport();
+            await msg.reply('📊 Roadmap progress report sent above.');
+          } catch (error) {
+            await msg.reply(`❌ Roadmap status failed: ${error.message}`);
+          }
+        }
+      );
+
       // Apply one update at a time
       router.registerHandler(
         'Update Apply Command',
@@ -379,11 +398,13 @@ async function main() {
             `\`/update-apply <pkg>@<ver>\` - Apply one update\n` +
             `\`/setup-channels\` - Create OpenClaw channels\n` +
             `\`/build-roadmap-all\` - Build/deploy all roadmap items\n` +
+            `\`/roadmap-status\` - Show roadmap progress report\n` +
             `\`/vault add <site> <user> <pass> [notes]\` - Save credentials\n` +
             `\`/help\` - Show this help\n\n` +
             `**Autonomous Mode:**\n` +
             `OpenClaw builds features monthly on the 1st at 9:00 AM ET.\n` +
-            `You'll get approval requests before deployment.`
+            `Roadmap features are always built FIRST.\n` +
+            `New AI ideas require your ✅ approval before building.`
           );
         }
       );
@@ -479,7 +500,7 @@ async function main() {
           { name: '📊', value: 'Cost Tracking', inline: true },
           { name: '🔐', value: 'Approval Gates', inline: true },
           { name: '🗄️', value: 'Database Logging', inline: true },
-          { name: '⏰', value: 'Auto-Build: Every 4hrs', inline: true }
+          { name: '🗺️', value: 'Roadmap-First Build', inline: true }
         ],
         footer: { text: 'Send /help for commands' },
         color: 0x9b59b6

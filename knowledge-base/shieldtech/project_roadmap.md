@@ -143,11 +143,9 @@
 - Sales can manage leads
 - Site deployed to Vercel
 
-cat >> /home/kosmox_ai/openclaw/knowledge-base/shieldtech/project_roadmap.md <<'EOF'
-
 ---
 
-## Phase 4: Platform Hardening & Safety (Auto-Added)
+## Phase 4: Platform Hardening & Safety
 
 - Add audit log + change history for all CRUD actions
 - Add soft delete + restore workflows on key entities
@@ -156,7 +154,7 @@ cat >> /home/kosmox_ai/openclaw/knowledge-base/shieldtech/project_roadmap.md <<'
 - Add rollback system for last 3 builds
 - Add automated QA checklist per roadmap item
 
-## Phase 5: Revenue & Ops Boost (Auto-Added)
+## Phase 5: Revenue & Ops Boost
 
 - Lead scoring + auto follow-up engine
 - Customer health score model
@@ -164,7 +162,7 @@ cat >> /home/kosmox_ai/openclaw/knowledge-base/shieldtech/project_roadmap.md <<'
 - Unified activity feed (tickets, alerts, logins, updates)
 - Role-based access control (RBAC)
 
-## Phase 6: Scale & Differentiation (Auto-Added)
+## Phase 6: Scale & Differentiation
 
 - Multi-tenant support
 - Index health & query analyzer
@@ -172,4 +170,3 @@ cat >> /home/kosmox_ai/openclaw/knowledge-base/shieldtech/project_roadmap.md <<'
 - AI operator mode (incident remediation)
 - Shadow sales assistant (quotes + follow-ups)
 - Real-time executive dashboard (Vercel portal)
-EOF
